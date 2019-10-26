@@ -1,0 +1,164 @@
+library(shiny)
+library(plotly)
+library(leaflet)
+library(sp)
+library(raster)
+library(rgeos)
+
+
+#Chargement de données
+dataSt <- shapefile(file.choose()) #Table de temperature , library raster
+dataSp <- shapefile(file.choose()) #Table de precipitation
+#setwd("/home/marouane/Bureau/Rdirectory/pfaTst/")
+dataAnnualTemp <- read.csv("anomalieTmp.csv")
+dataAnnualprecipAus <- read.csv("AnnualPrecipAUS.csv")
+
+
+
+
+#interface utilisateur
+ui <- fluidPage(
+  navbarPage("Anomalie climatique 2100", id ="navbar",
+             tabPanel("Map",
+                      selectInput("select", label ="", 
+                                  choices = list("Temperature" = 1, "Precipitation" = 2), 
+                                  selected = 1),
+                      leafletOutput("tempMap")
+                      
+             ),
+             tabPanel("Dans le temps", 
+                      navlistPanel(
+                        "Graphes",
+                        tabPanel("A propos" ,
+                                 wellPanel(
+                                   h1("Anomalie du climat"),
+                                   br(),
+                                   p(span(">L'anomalie de la température",style="color:green"), "est la difference entre la moyenne des temperatures
+                                     d'un intervalle important 30 ans ou plus et la temperature actuelle.
+                              En d'autre terme c'est la marge au résultat attendue
+                              (resp même définition pour précipitation)."
+                            ),
+                          
+                          br(),
+                          p("Pour le graphe de la temperature(Global) l'intervalle de réference est :" , span("[1901,2000]",style = "color:grey")),
+                          br(),
+                          p("Pour le graphe de la précipitation(Australie) l'intervalle de réference est :" , span("[1961,1990] 465.2 mm",style = "color:grey")),
+                          br(),
+                          h3("Sources:"),
+                          a("http://ete.cet.edu/gcc/?/globaltemp_anomalies/"),
+                          br(),
+                          a("https://www.ncdc.noaa.gov/cag/global/time-series"),
+                          br(),
+                          a("http://www.bom.gov.au/climate/change"),
+                          br(),
+                          br(),
+                          br(),
+                          br()
+                          
+                        )
+                        ),
+                        tabPanel("Anomalie temperature 1880-2015(GLOBAL)" , 
+                                 plotlyOutput("plotAnnualT"),
+                                 br(),
+                                 wellPanel(
+                                   sprintf("<font size= 3><strong><span style = color:purple>Année la plus chaude: </span></strong></font>%s</br></br>
+                                           <font size= 3><strong><span style = color:blue>Année la plus froide: </span></strong></font>%s",
+                                           dataAnnualTemp[dataAnnualTemp$Value == max(dataAnnualTemp$Value),"Year"],
+                                           dataAnnualTemp[dataAnnualTemp$Value == min(dataAnnualTemp$Value),"Year"]
+                                   )%>% lapply(htmltools::HTML)
+                                 )
+                        ),
+                        tabPanel("Anomalie temperature 1990-2015(AUS)" , 
+                                 plotlyOutput("plotAnnualprecipAus"))
+                        
+                        ))
+             
+             )
+  
+  
+  
+  )
+
+#Logique de l'interface
+server <- function(input, output) {
+  
+  #initialisation de la map 
+  output$tempMap <- renderLeaflet({
+    leaflet(options = leafletOptions(minZoom = 2, maxZoom = 3) )  %>% 
+      setMaxBounds(-90,-180,90,180) %>% 
+      addProviderTiles(providers$Stamen.TonerLite) 
+    
+  })
+  #Ajout d'élement dans la map selon le choix du select box "select" (initialisé sur 1)
+  #choix 1 = map de temperature, 2 = map de precipitation
+  observe({
+    if(input$select == "1") {
+      pal <- colorBin(palette = c("#ADFF2F" ,"#FFD700", "red", "#DC143C","#4B0082"), domain = dataSt$annual, bins = 6)
+      labels <- sprintf(
+        "<strong>+%s</strong><br/>", dataSt$annual) %>% lapply(htmltools::HTML)
+      leafletProxy("tempMap",data= dataSt) %>% clearControls() %>% clearShapes() %>%  
+        leaflet::addPolygons(fillColor= ~pal(annual), weight = 1, stroke = F,
+                    opacity = 1.0, fillOpacity = 0.5,
+                    label = labels
+        ) %>% 
+        leaflet::addLegend(position="bottomright",title = "°C",pal= pal, values= ~annual,opacity = 0.7) 
+    }
+    else{
+      pal <- colorBin(palette = c("yellow", "orange","#3CB371","blue" ,"purple","black"), domain = dataSp$annual, bins = 6)
+      labels <- sprintf(
+        "<strong>%s</strong><br/>", dataSp$annual) %>% lapply(htmltools::HTML)
+      leafletProxy("tempMap",data= dataSp) %>% clearControls() %>% clearShapes() %>% 
+                addPolygons(fillColor= ~pal(annual), weight = 1, stroke = F,
+                    opacity = 1.0, fillOpacity = 0.5,
+                    label = labels
+        ) %>% 
+        addLegend(position="bottomright",title = "mm",pal= pal, values= ~annual,opacity = 0.7)
+    }
+  })
+  
+  observe({
+    ppup<- sprintf("<img src => </img>
+                   </br>Longitude: %s</br>Latitude: %s",
+            input$tempMap_shape_click[4] ,input$tempMap_shape_click[3] 
+    )%>% lapply(htmltools::HTML)
+    leafletProxy("tempMap") %>% addPopups(as.numeric(input$tempMap_shape_click[4]),as.numeric(input$tempMap_shape_click[3]),popup = ppup)
+  })
+  
+  
+  #Graphe Anomalie temperature en fonction des années
+  output$plotAnnualT <- renderPlotly({
+    x <- list(
+      title = "Année",
+      titlefont = ""
+    )
+    y <- list(
+      title = "Anomalie de la temperature°C",
+      titlefont = ""
+    )
+    plot_ly(x=dataAnnualTemp$Year, y=dataAnnualTemp$Value , type="bar", showlegend = F,name="",
+            color = dataAnnualTemp$Value,
+            colors  =  ifelse(dataAnnualTemp$Value < -0.2 ,"lightblue" ,
+                              ifelse(dataAnnualTemp$Value < 0,"blue",
+                                     ifelse(dataAnnualTemp$Value < 0.2 , "yellow",
+                                            ifelse(dataAnnualTemp$Value < 0.4, "orange",
+                                                   ifelse(dataAnnualTemp$Value < 0.6 ,"red", "purple")))))
+    ) %>% layout(showlegend = FALSE , xaxis= x , yaxis= y)
+  })
+  #Graphe Anomalie precipitation en fonction des années
+  output$plotAnnualprecipAus <- renderPlotly({
+    x <- list(
+      title = "Année",
+      titlefont = ""
+    )
+    y <- list(
+      title = "Anomalie de la precipitation en mm",
+      titlefont = ""
+    )
+    plot_ly(x=dataAnnualprecipAus$Year, y=dataAnnualprecipAus$Value , type="bar", showlegend = F,name="")%>%
+      layout(showlegend = FALSE , xaxis= x , yaxis= y)
+  })
+  
+  
+}
+
+shinyApp(ui, server)
