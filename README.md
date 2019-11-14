@@ -25,7 +25,7 @@ Au cours de ce projet, Marouane Maatouk et moi avons eu l'occasion de:
 
 -Collecter et étudier de vastes ensembles de données sur les précipitations pluviales en Afrique
 
-- Réaliser des rapports et assurer une gestion des données précise et réussie
+-Réaliser des rapports et assurer une gestion des données précise et réussie
 
 -Créer en utilisant Leaflet une application de visualisation permettant aux utilisateurs de voir le contenu
 des fichiers CSV sur des cartes réelles en indiquant la densité des précipitations en fonction de leur emplacement sur la carte.
